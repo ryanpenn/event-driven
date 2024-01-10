@@ -12,7 +12,7 @@ func init() {
 		slackHook:  "https://hooks.slack.com/services/delete",
 	}
 
-	event.UserDeleted.Register(deleteNotifier)
+	event.UserDeletedEvent.Register(event.EventID(1), deleteNotifier)
 }
 
 type userDeletedNotifier struct {
@@ -30,7 +30,7 @@ func (u userDeletedNotifier) sendToSlack(email string, t time.Time) {
 	fmt.Println("sendToSlack", u.slackHook, email, t.Format(time.DateTime))
 }
 
-func (u userDeletedNotifier) Handle(payload event.UserDeletedPayload) {
+func (u userDeletedNotifier) Handle(_ event.Sender, payload event.UserDeletedPayload) {
 	// Do something with our payload
 	u.notifyAdmin(payload.Email, payload.Time)
 	u.sendToSlack(payload.Email, payload.Time)

@@ -7,7 +7,7 @@ import (
 
 func CreateUser() {
 	// ...
-	event.UserCreated.Trigger(event.UserCreatedPayload{
+	event.UserCreatedEvent.Trigger(nil, &event.UserCreatedPayload{
 		Email: "new.user@example.com",
 		Time:  time.Now(),
 	})
@@ -16,24 +16,9 @@ func CreateUser() {
 
 func DeleteUser() {
 	// ...
-	event.UserDeleted.Trigger(event.UserDeletedPayload{
+	event.UserDeletedEvent.Trigger(nil, event.UserDeletedPayload{
 		Email: "deleted.user@example.com",
 		Time:  time.Now(),
 	})
 	// ...
-}
-
-func SamplePublish() {
-	event.SampleEvent.Trigger(event.SampleEventPayload{
-		Name: "Sample",
-	})
-
-	event.SampleEvent.Async = true
-	event.SampleEvent.Trigger(event.SampleEventPayload{
-		Name: "Async Sample",
-	})
-
-	event.SampleRefEvent.Trigger(&event.SampleEventPayload{
-		Name: "Ref Sample",
-	})
 }
