@@ -103,3 +103,7 @@ func main() {
 ## Examples
 
 - [Example](./event/event_test.go)
+
+## References
+
+- [Watermill](https://www.tizi365.com/topic/14661.html)
