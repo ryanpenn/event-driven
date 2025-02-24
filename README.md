@@ -1,109 +1,81 @@
 # Implementing an Event Driven System in Go
 
-> refer: [event-driven-system](https://stephenafamo.com/blog/posts/implementing-an-event-driven-system-in-go)
+> V2 is an event system based on pub/sub pattern.
 
-## Define Base Events
-
-```go
-// Event [T] is the base event
-type Event[T any] struct {
-	handlers []interface{ Handle(T) }
-}
-
-// Register adds an event handler for this event
-func (e *Event[T]) Register(handler interface{ Handle(T) }) {
-	e.handlers = append(e.handlers, handler)
-}
-
-// Trigger sends out an event with the payload
-func (e *Event[T]) Trigger(payload T) {
-	for _, handler := range e.handlers {
-		handler.Handle(payload)
-	}
-}
-```
-- Functions are first-class values
+## Pub/Sub Pattern
 
 ```go
-// EventHandleFunc
-type HandleFunc[T any] func(T)
+// Subscriber is a function that takes a topic of type T and handles it.
+type Subscriber[T any] func(topic T)
 
-// implement Handle interface
-func (h HandleFunc[T]) Handle(payload T) {
-	h(payload)
+// Unsubscriber is an interface that unsubscribes a subscriber.
+type Unsubscriber interface {
+	// Unsubscribe unsubscribes the subscriber.
+	Unsubscribe()
+	// Bind binds the Unsubscriber to an AutoCloser Object.
+	Bind(AutoCloser)
 }
 
-// RegisterFunc adds an event handler func for this event
-func (e *Event[T]) RegisterFunc(fn HandleFunc[T]) {
-	e.handlers = append(e.handlers, fn)
+// AutoCloser is an interface that provides a Close method to unsubscribe all subscribers.
+type AutoCloser interface {
+	// Close closes the AutoCloser and unsubscribes all subscribers.
+	Close()
+	// Add adds an unsubscriber to the list.
+	Add(unsubscriber Unsubscriber)
 }
 ```
+Implementation of the pub/sub pattern in [pubsub.go](./pubsub/pubsub.go).
 
 ## Implement Events
 
 ```go
-// SamplePayload is the data for sampleEvent
-type SamplePayload struct {
-	Name string
+// Event is an interface for all events
+type Event interface {
+	Type() EventType
 }
 
-// In sampleEvent SampleEventPayload is pass by value
-type sampleEvent struct {
-	Event[SamplePayload]
+// EventType is a type of event
+type EventType int
+
+func (t EventType) Type() EventType {
+	return t
 }
 
-// In sampleRefEvent SampleEventPayload is pass by reference
-type sampleRefEvent struct {
-	Event[*SamplePayload]
+// EventData is a generic struct for holding event data
+type EventData[T any] struct {
+	eType EventType
+	data  T
 }
 
-// Define event instances
-var (
-    SampleEvent sampleEvent
-    SampleRefEvent sampleRefEvent
-)
+func (e EventData[T]) Type() EventType {
+	return e.eType
+}
+
+func (e EventData[T]) Data() any {
+	return e.data
+}
+
+func (e EventData[T]) DataAs() T {
+	return e.data
+}
 ```
 
-## Register handler for events
+Implementation of the event in [event.go](./event/event.go).
+
+## EventBus for events
 
 ```go
-type sampleNotifier struct {
-}
-
-// implement the Handle interface
-func (sampleNotifier) Handle(payload event.SamplePayload) {
-	fmt.Println("sampleNotifier Handle", payload.Name, fmt.Sprintf("%p", &payload))
-}
-
-// Register events in init()
-func init() {
-	notifier := sampleNotifier{}
-	event.SampleEvent.Register(notifier)
-
-	event.SampleEvent.RegisterFunc(func(payload event.SamplePayload) {
-		fmt.Println("FuncHandle", payload.Name, fmt.Sprintf("%p", payload))
-	})
+type Bus interface {
+	OnEvent(event EventType, fn pubsub.Subscriber[Event]) pubsub.Unsubscriber
+	Trigger(event Event)
 }
 ```
-
-## Triggering events
-
-```go
-func Publish() {
-	event.SampleEvent.Trigger(event.SamplePayload{
-		Name: "Sample",
-	})
-}
-
-func main() {
-	Publish()
-}
-```
+Implementation of the event bus in [bus.go](./event/bus.go).
 
 ## Examples
 
-- [Example](./event/event_test.go)
+- [Example](./example/main.go)
 
-## References
-
-- [Watermill](https://www.tizi365.com/topic/14661.html)
+```bash
+go run ./example
+```
