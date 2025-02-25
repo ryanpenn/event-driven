@@ -1,76 +1,107 @@
 # Implementing an Event Driven System in Go
 
-> V2 is an event system based on pub/sub pattern.
+> V3 is an eventbus implementation for an event driven system.
 
-## Pub/Sub Pattern
-
-```go
-// Subscriber is a function that takes a topic of type T and handles it.
-type Subscriber[T any] func(topic T)
-
-// Unsubscriber is an interface that unsubscribes a subscriber.
-type Unsubscriber interface {
-	// Unsubscribe unsubscribes the subscriber.
-	Unsubscribe()
-	// Bind binds the Unsubscriber to an AutoCloser Object.
-	Bind(AutoCloser)
-}
-
-// AutoCloser is an interface that provides a Close method to unsubscribe all subscribers.
-type AutoCloser interface {
-	// Close closes the AutoCloser and unsubscribes all subscribers.
-	Close()
-	// Add adds an unsubscriber to the list.
-	Add(unsubscriber Unsubscriber)
-}
-```
-Implementation of the pub/sub pattern in [pubsub.go](./pubsub/pubsub.go).
-
-## Implement Events
+## Event Interface
 
 ```go
-// Event is an interface for all events
-type Event interface {
-	Type() EventType
-}
-
-// EventType is a type of event
 type EventType int
 
 func (t EventType) Type() EventType {
 	return t
 }
 
-// EventData is a generic struct for holding event data
-type EventData[T any] struct {
-	eType EventType
-	data  T
+type Event interface {
+	Type() EventType
 }
 
-func (e EventData[T]) Type() EventType {
-	return e.eType
-}
+type EventHandler func(event Event)
 
-func (e EventData[T]) Data() any {
-	return e.data
-}
-
-func (e EventData[T]) DataAs() T {
-	return e.data
+type EventBus interface {
+	Publish(event Event)
+	Subscribe(etype EventType, handler EventHandler)
+	Unsubscribe(etype EventType, handler EventHandler)
+	UnsubscribeAll(etype EventType)
 }
 ```
 
-Implementation of the event in [event.go](./event/event.go).
-
-## EventBus for events
+## EventBus Implement
 
 ```go
-type Bus interface {
-	OnEvent(event EventType, fn pubsub.Subscriber[Event]) pubsub.Unsubscriber
-	Trigger(event Event)
+type eventbus struct {
+	lock     *sync.RWMutex
+	handlers map[EventType]map[uintptr][]EventHandler
+}
+
+func NewEventBus() EventBus {
+	return &eventbus{
+		lock:     &sync.RWMutex{},
+		handlers: map[EventType]map[uintptr][]EventHandler{},
+	}
+}
+
+func (eb *eventbus) Publish(event Event) {
+	eb.lock.RLock()
+	defer eb.lock.RUnlock()
+
+	handlers := eb.handlers[event.Type()]
+	for _, handler := range handlers {
+		for _, fn := range handler {
+			fn(event)
+		}
+	}
+}
+
+func (eb *eventbus) Subscribe(etype EventType, handler EventHandler) {
+	eb.lock.Lock()
+	defer eb.lock.Unlock()
+
+	if _, ok := eb.handlers[etype]; !ok {
+		eb.handlers[etype] = map[uintptr][]EventHandler{}
+	}
+
+	ptr := reflect.ValueOf(handler).Pointer()
+	eb.handlers[etype][ptr] = append(eb.handlers[etype][ptr], handler)
+}
+
+func (eb *eventbus) Unsubscribe(etype EventType, handler EventHandler) {
+	eb.lock.Lock()
+	defer eb.lock.Unlock()
+
+	if _, ok := eb.handlers[etype]; !ok {
+		return
+	}
+
+	ptr := reflect.ValueOf(handler).Pointer()
+	if _, ok := eb.handlers[etype][ptr]; !ok {
+		return
+	}
+
+	l := len(eb.handlers[etype][ptr])
+	if l > 0 {
+		eb.handlers[etype][ptr] = eb.handlers[etype][ptr][:l-1]
+	}
+
+	if len(eb.handlers[etype][ptr]) == 0 {
+		delete(eb.handlers[etype], ptr)
+	}
+}
+
+func (eb *eventbus) UnsubscribeAll(etype EventType) {
+	eb.lock.Lock()
+	defer eb.lock.Unlock()
+
+	if _, ok := eb.handlers[etype]; !ok {
+		return
+	}
+
+	for ptr := range eb.handlers[etype] {
+		delete(eb.handlers[etype], ptr)
+	}
 }
 ```
-Implementation of the event bus in [bus.go](./event/bus.go).
+
+all code in [eventbus.go](./eventbus/eventbus.go).
 
 ## Examples
 

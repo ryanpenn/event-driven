@@ -1,60 +1,46 @@
 package main
 
 import (
-	"event-driven-system/event"
-	"event-driven-system/pubsub"
+	"event-driven-system/eventbus"
 	"fmt"
-	"sync"
 )
 
-const (
-	TestEvent1 event.EventType = iota + 1
-	TestEvent2
-	ValueChangedEvent
-)
+type MyEvent struct {
+	Name string
+	Age  int
+}
 
-type ValueChanged struct {
-	Old int
-	New int
+func (MyEvent) Type() eventbus.EventType {
+	return eventbus.EventType(1)
 }
 
 func main() {
-	bus := event.NewBus()
-	unsub := bus.OnEvent(0, func(e event.Event) {
-		fmt.Println(e.Type(), "triggered")
+	bus := eventbus.NewEventBus()
+	// subscribe EventType(0) with anonymous handler
+	bus.Subscribe(0, func(event eventbus.Event) {
+		fmt.Println("anonymous handler received: ", event.Type())
 	})
-	bus.Trigger(event.EventType(0))
-	unsub.Unsubscribe()             // This will unsubscribe the callback function
-	bus.Trigger(event.EventType(0)) // This will not trigger the callback function
+	bus.Publish(eventbus.EventType(0)) // anonymous handler will receive this event
+	bus.UnsubscribeAll(0)              // unsubscribe all handlers of EventType(0)
+	bus.Publish(eventbus.EventType(0)) // no handler will receive this event
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		aus := pubsub.NewAutoUnsub() // This will create a new AutoCloser instance
-		defer aus.Close()            // This will unsubscribe all the subscribers
+	handler1 := func(event eventbus.Event) {
+		myEvent := event.(MyEvent)
+		println("handler1 received: ", myEvent.Name, myEvent.Age)
+	}
+	handler2 := func(event eventbus.Event) {
+		myEvent := event.(MyEvent)
+		println("handler2 received: ", myEvent.Name, myEvent.Age)
+	}
+	bus.Subscribe(MyEvent{}.Type(), handler1)   // subscribe event type 1 with handler1
+	bus.Subscribe(MyEvent{}.Type(), handler1)   // subscribing twice will work as well
+	bus.Subscribe(MyEvent{}.Type(), handler2)   // subscribe event type 1 with handler2
+	bus.Publish(MyEvent{Name: "John", Age: 30}) // all handlers will receive this event
 
-		bus.OnEvent(TestEvent1, func(e event.Event) {
-			fmt.Println(e.Type(), "triggered")
-		}).Bind(aus)
-		bus.Trigger(TestEvent1)
+	bus.Unsubscribe(MyEvent{}.Type(), handler1)
+	bus.Unsubscribe(MyEvent{}.Type(), handler2)
+	bus.Publish(MyEvent{Name: "Jane", Age: 25}) // only one handler1 will receive this event
 
-		bus.OnEvent(TestEvent2, func(e event.Event) {
-			fmt.Println(e.Type(), "triggered")
-		}).Bind(aus)
-		bus.Trigger(TestEvent2)
-	}()
-
-	unsub = bus.OnEvent(ValueChangedEvent, func(e event.Event) {
-		if data, ok := e.(event.EventData[ValueChanged]); ok {
-			fmt.Println(e.Type(), "triggered ->", data.DataAs().Old, data.DataAs().New)
-		}
-	})
-	bus.Trigger(event.NewEvent(ValueChangedEvent, ValueChanged{1, 2}))
-	unsub.Unsubscribe()
-
-	wg.Wait()
-
-	bus.Trigger(TestEvent1) // This will not trigger the callback function
-	bus.Trigger(TestEvent2) // This will not trigger the callback function
+	bus.UnsubscribeAll(MyEvent{}.Type())
+	bus.Publish(MyEvent{Name: "Bob", Age: 40}) // no handler will receive this event
 }
